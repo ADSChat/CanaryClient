@@ -3,16 +3,16 @@ import{ Channel }from"./channel.js";
 import{ Direct }from"./direct.js";
 import{ AVoice }from"./audio.js";
 import{ User }from"./user.js";
-import{ Dialog }from"./dialog.js";
 import{ getapiurls, getBulkInfo, setTheme, Specialuser, SW }from"./login.js";
-import{channeljson,guildjson,mainuserjson,memberjson,memberlistupdatejson,messageCreateJson,presencejson,readyjson,startTypingjson,userjson,wsjson,}from"./jsontypes.js";
+import{channeljson,guildjson,mainuserjson,memberjson,memberlistupdatejson,messageCreateJson,presencejson,readyjson,startTypingjson,wsjson,}from"./jsontypes.js";
 import{ Member }from"./member.js";
-import{ Form, FormError, Options, Settings }from"./settings.js";
-import{ getTextNodeAtPosition, MarkDown, saveCaretPosition }from"./markdown.js";
+import{ Dialog, Form, FormError, Options, Settings }from"./settings.js";
+import{ getTextNodeAtPosition, MarkDown }from"./markdown.js";
 import { Bot } from "./bot.js";
 import { Role } from "./role.js";
 import { VoiceFactory } from "./voice.js";
-import { I18n } from "./i18n.js";
+import { I18n, langmap } from "./i18n.js";
+import { Emoji } from "./emoji.js";
 
 const wsCodesRetry = new Set([4000,4001,4002, 4003, 4005, 4007, 4008, 4009]);
 
@@ -25,8 +25,6 @@ class Localuser{
 	initialized!: boolean;
 	info!: Specialuser["serverurls"];
 	headers!: { "Content-type": string; Authorization: string };
-	userConnections!: Dialog;
-	devPortal!: Dialog;
 	ready!: readyjson;
 	guilds!: Guild[];
 	guildids: Map<string, Guild> = new Map();
@@ -123,12 +121,14 @@ class Localuser{
 			const user = new User(thing.user, this);
 			user.nickname = thing.nickname;
 			user.relationshipType = thing.type;
+			this.inrelation.add(user);
 		}
 
 		this.pingEndpoint();
 		this.userinfo.updateLocal();
 
 	}
+	inrelation=new Set<User>();
 	outoffocus(): void{
 		const servers = document.getElementById("servers") as HTMLDivElement;
 		servers.innerHTML = "";
@@ -364,6 +364,7 @@ class Localuser{
 		});
 		await promise;
 	}
+	relationshipsUpdate=()=>{};
 	async handleEvent(temp: wsjson){
 		console.debug(temp);
 		if(temp.s)this.lastSequence = temp.s;
@@ -436,7 +437,7 @@ class Localuser{
 					}
 					break;
 				}
-				case"GUILD_CREATE": {
+				case"GUILD_CREATE": (async()=>{
 					const guildy = new Guild(temp.d, this, this.user);
 					this.guilds.push(guildy);
 					this.guildids.set(guildy.id, guildy);
@@ -444,8 +445,9 @@ class Localuser{
 						guildy.generateGuildIcon(),
 						document.getElementById("bottomseparator")
 					);
-					break;
-				}
+
+				})();
+				break;
 				case"MESSAGE_REACTION_ADD":
 					{
 						temp.d.guild_id ??= "@me";
@@ -537,6 +539,44 @@ class Localuser{
 					guild.memberupdate(temp.d)
 					break
 				}
+				case "RELATIONSHIP_ADD":{
+					const user = new User(temp.d.user, this);
+					user.nickname = null;
+					user.relationshipType = temp.d.type;
+					this.inrelation.add(user);
+					this.relationshipsUpdate();
+					break;
+				}
+				case "RELATIONSHIP_REMOVE":{
+					const user = this.userMap.get(temp.d.id);
+					if(!user) return;
+					user.nickname = null;
+					user.relationshipType = 0;
+					this.inrelation.delete(user);
+					this.relationshipsUpdate();
+					break;
+				}
+				case "PRESENCE_UPDATE":{
+					if(temp.d.user){
+						this.presences.set(temp.d.user.id, temp.d);
+					}
+					break;
+				}
+				case "GUILD_MEMBER_ADD":{
+					const guild=this.guildids.get(temp.d.guild_id);
+					if(!guild) break;
+					Member.new(temp.d,guild);
+					break;
+				}
+				case "GUILD_MEMBER_REMOVE":{
+					const guild=this.guildids.get(temp.d.guild_id);
+					if(!guild) break;
+					const user=new User(temp.d.user,this);
+					const member=user.members.get(guild);
+					if(!(member instanceof Member)) break;
+					member.remove();
+					break;
+				}
 				default :{
 					//@ts-ignore
 					console.warn("Unhandled case "+temp.t,temp);
@@ -600,7 +640,7 @@ class Localuser{
 		if(!guild)return;
 		const channel = guild.createChannelpac(json);
 		if(json.guild_id === this.lookingguild?.id){
-			this.loadGuild(json.guild_id);
+			this.loadGuild(json.guild_id,true);
 		}
 		if(channel.id === this.gotoid){
 			guild.loadGuild();
@@ -724,12 +764,12 @@ class Localuser{
 		}
 	}
 	gotoid: string | undefined;
-	async goToChannel(id: string){
+	async goToChannel(id: string,addstate=true){
 		const channel = this.channelids.get(id);
 		if(channel){
 			const guild = channel.guild;
 			guild.loadGuild();
-			guild.loadChannel(id);
+			guild.loadChannel(id,addstate);
 		}else{
 			this.gotoid = id;
 		}
@@ -743,7 +783,7 @@ class Localuser{
 		}
 
 		if(json.guild_id === this.lookingguild?.id){
-			this.loadGuild(json.guild_id);
+			this.loadGuild(json.guild_id,true);
 		}
 	}
 	init(): void{
@@ -770,12 +810,13 @@ class Localuser{
 			return false;
 		}
 	}
-	loadGuild(id: string): Guild | undefined{
+	loadGuild(id: string,forceReload=false): Guild | undefined{
 		let guild = this.guildids.get(id);
 		if(!guild){
 			guild = this.guildids.get("@me");
 		}
-		if(this.lookingguild === guild){
+		console.log(forceReload);
+		if((!forceReload)&&(this.lookingguild === guild)){
 			return guild;
 		}
 		if(this.channelfocus){
@@ -791,8 +832,7 @@ class Localuser{
 			guild.html.classList.add("serveropen");
 		}
 		this.lookingguild = guild;
-		(document.getElementById("serverName") as HTMLElement).textContent =
-      guild.properties.name;
+		(document.getElementById("serverName") as HTMLElement).textContent = guild.properties.name;
 		//console.log(this.guildids,id)
 		const channels = document.getElementById("channels") as HTMLDivElement;
 		channels.innerHTML = "";
@@ -866,99 +906,44 @@ class Localuser{
 		this.unreads();
 	}
 	createGuild(){
-		let inviteurl = "";
-		const error = document.createElement("span");
-		const fields: { name: string; icon: string | null } = {
-			name: "",
-			icon: null,
-		};
-		const full = new Dialog([
-			"tabs",
-			[
-				[
-					I18n.getTranslation("invite.joinUsing"),
-					[
-						"vdiv",
-						[
-							"textbox",
-							I18n.getTranslation("invite.inviteLinkCode"),
-							"",
-							function(this: HTMLInputElement){
-								inviteurl = this.value;
-							},
-						],
-						["html", error],
-						[
-							"button",
-							"",
-							I18n.getTranslation("submit"),
-							(_: any)=>{
-								let parsed = "";
-								if(inviteurl.includes("/")){
-									parsed =
-                    inviteurl.split("/")[inviteurl.split("/").length - 1];
-								}else{
-									parsed = inviteurl;
-								}
-								fetch(this.info.api + "/invites/" + parsed, {
-									method: "POST",
-									headers: this.headers,
-								})
-									.then(r=>r.json())
-									.then(_=>{
-										if(_.message){
-											error.textContent = _.message;
-										}
-									});
-							},
-						],
-					],
-				],
-				[
-					I18n.getTranslation("guild.create"),
-					[
-						"vdiv",
-						["title", I18n.getTranslation("guild.create")],
-						[
-							"fileupload",
-							I18n.getTranslation("guild.icon:"),
-							function(event: Event){
-								const target = event.target as HTMLInputElement;
-								if(!target.files)return;
-								const reader = new FileReader();
-								reader.readAsDataURL(target.files[0]);
-								reader.onload = ()=>{
-									fields.icon = reader.result as string;
-								};
-							},
-						],
-						[
-							"textbox",
-							I18n.getTranslation("guild.name:"),
-							"",
-							function(this: HTMLInputElement, event: Event){
-								const target = event.target as HTMLInputElement;
-								fields.name = target.value;
-							},
-						],
-						[
-							"button",
-							"",
-							I18n.getTranslation("submit"),
-							()=>{
-								this.makeGuild(fields).then(_=>{
-									if(_.message){
-										alert(_.errors.name._errors[0].message);
-									}else{
-										full.hide();
-									}
-								});
-							},
-						],
-					],
-				],
-			],
-		]);
+
+		const full=new Dialog("");
+		const buttons=full.options.addButtons("",{top:true});
+		const viacode=buttons.add(I18n.getTranslation("invite.joinUsing"));
+		{
+			const form=viacode.addForm("",async (e: any)=>{
+				let parsed = "";
+				if(e.code.includes("/")){
+					parsed = e.code.split("/")[e.code.split("/").length - 1];
+				}else{
+					parsed = e.code;
+				}
+				const json=await (await fetch(this.info.api + "/invites/" + parsed, {
+					method: "POST",
+					headers: this.headers,
+				})).json()
+				if(json.message){
+					throw new FormError(text,json.message);
+				}
+				full.hide();
+			});
+			const text=form.addTextInput(I18n.getTranslation("invite.inviteLinkCode"),"code");
+		}
+		const guildcreate=buttons.add(I18n.getTranslation("guild.create"));
+		{
+			const form=guildcreate.addForm("",(fields:any)=>{
+				this.makeGuild(fields).then(_=>{
+					if(_.message){
+						alert(_.errors.name._errors[0].message);
+					}else{
+						full.hide();
+					}
+				});
+			});
+			form.addFileInput(I18n.getTranslation("guild.icon:"),"icon",{files:"one"});
+			form.addTextInput(I18n.getTranslation("guild.name:"),"name",{required:true});
+
+		}
 		full.show();
 	}
 	async makeGuild(fields: { name: string; icon: string | null }){
@@ -974,7 +959,8 @@ class Localuser{
 		const content = document.createElement("div");
 		content.classList.add("flexttb","guildy");
 		content.textContent = I18n.getTranslation("guild.loadingDiscovery");
-		const full = new Dialog(["html", content]);
+		const full = new Dialog("");
+		full.options.addHTMLArea(content);
 		full.show();
 
 		const res = await fetch(this.info.api + "/discoverable-guilds?limit=50", {
@@ -1451,7 +1437,7 @@ class Localuser{
 
 				security.addSelect(I18n.getTranslation("localuser.language"),(e)=>{
 					I18n.setLanguage(I18n.options()[e]);
-				},I18n.options(),{
+				},[...langmap.values()],{
 					defaultIndex:I18n.options().indexOf(I18n.lang)
 				});
 				{
@@ -1714,30 +1700,32 @@ class Localuser{
 			Bot.InviteMaker(appId,form,this.info);
 		})
 	}
-	typeMd?:MarkDown;
 	readonly autofillregex=Object.freeze(/[@#:]([a-z0-9 ]*)$/i);
 	mdBox(){
 		interface CustomHTMLDivElement extends HTMLDivElement {markdown: MarkDown;}
 
 		const typebox = document.getElementById("typebox") as CustomHTMLDivElement;
-		this.typeMd=typebox.markdown;
-		this.typeMd.onUpdate=this.search.bind(this);
+		const typeMd=typebox.markdown;
+		typeMd.owner=this;
+		typeMd.onUpdate=(str,pre)=>{
+			this.search(document.getElementById("searchOptions") as HTMLDivElement,typeMd,str,pre);
+		}
 	}
-	MDReplace(replacewith:string,original:string){
-		const typebox = document.getElementById("typebox") as HTMLDivElement;
-		if(!this.typeMd)return;
-		let raw=this.typeMd.rawString;
+	MDReplace(replacewith:string,original:string,typebox:MarkDown){
+		let raw=typebox.rawString;
 		raw=raw.split(original)[1];
 		if(raw===undefined) return;
 		raw=original.replace(this.autofillregex,"")+replacewith+raw;
 		console.log(raw);
 		console.log(replacewith);
 		console.log(original);
-		this.typeMd.txt = raw.split("");
-		this.typeMd.boxupdate(typebox);
+		typebox.txt = raw.split("");
+		const match=original.match(this.autofillregex);
+		if(match){
+			typebox.boxupdate(replacewith.length-match[0].length);
+		}
 	}
-	MDSearchOptions(options:[string,string][],original:string){
-		const div=document.getElementById("searchOptions");
+	MDSearchOptions(options:[string,string,void|HTMLElement][],original:string,div:HTMLDivElement,typebox:MarkDown){
 		if(!div)return;
 		div.innerHTML="";
 		let i=0;
@@ -1749,24 +1737,30 @@ class Localuser{
 			i++;
 			const span=document.createElement("span");
 			htmloptions.push(span);
-			span.textContent=thing[0];
+			if(thing[2]){
+				span.append(thing[2]);
+			}
+
+			span.append(thing[0]);
 			span.onclick=(e)=>{
 
 				if(e){
 					const selection = window.getSelection() as Selection;
-					const typebox = document.getElementById("typebox") as HTMLDivElement;
+					const box=typebox.box.deref();
+					if(!box) return;
 					if(selection){
 						console.warn(original);
-						const pos = getTextNodeAtPosition(typebox, original.length-(original.match(this.autofillregex) as RegExpMatchArray)[0].length+thing[1].length);
+
+						const pos = getTextNodeAtPosition(box, original.length-(original.match(this.autofillregex) as RegExpMatchArray)[0].length+thing[1].length);
 						selection.removeAllRanges();
 						const range = new Range();
 						range.setStart(pos.node, pos.position);
 						selection.addRange(range);
 					}
 					e.preventDefault();
-					typebox.focus();
+					box.focus();
 				}
-				this.MDReplace(thing[1],original);
+				this.MDReplace(thing[1],original,typebox);
 				div.innerHTML="";
 				remove();
 			}
@@ -1825,7 +1819,7 @@ class Localuser{
 			remove();
 		}
 	}
-	MDFindChannel(name:string,orginal:string){
+	MDFindChannel(name:string,orginal:string,box:HTMLDivElement,typebox:MarkDown){
 		const maybe:[number,Channel][]=[];
 		if(this.lookingguild&&this.lookingguild.id!=="@me"){
 			for(const channel of this.lookingguild.channels){
@@ -1836,7 +1830,7 @@ class Localuser{
 			}
 		}
 		maybe.sort((a,b)=>b[0]-a[0]);
-		this.MDSearchOptions(maybe.map((a)=>["# "+a[1].name,`<#${a[1].id}> `]),orginal);
+		this.MDSearchOptions(maybe.map((a)=>["# "+a[1].name,`<#${a[1].id}> `,undefined]),orginal,box,typebox);
 	}
 	async getUser(id:string){
 		if(this.userMap.has(id)){
@@ -1844,7 +1838,7 @@ class Localuser{
 		}
 		return new User(await (await fetch(this.info.api+"/users/"+id)).json(),this);
 	}
-	MDFineMentionGen(name:string,original:string){
+	MDFineMentionGen(name:string,original:string,box:HTMLDivElement,typebox:MarkDown){
 		let members:[Member,number][]=[];
 		if(this.lookingguild){
 			for(const member of this.lookingguild.members){
@@ -1854,12 +1848,12 @@ class Localuser{
 				}
 			}
 		}
-		members.sort((a,b)=>a[1]-b[1]);
-		this.MDSearchOptions(members.map((a)=>["@"+a[0].name,`<@${a[0].id}> `]),original);
+		members.sort((a,b)=>b[1]-a[1]);
+		this.MDSearchOptions(members.map((a)=>["@"+a[0].name,`<@${a[0].id}> `,undefined]),original,box,typebox);
 	}
-	MDFindMention(name:string,original:string){
+	MDFindMention(name:string,original:string,box:HTMLDivElement,typebox:MarkDown){
 		if(this.ws&&this.lookingguild){
-			this.MDFineMentionGen(name,original);
+			this.MDFineMentionGen(name,original,box,typebox);
 			const nonce=Math.floor(Math.random()*10**8)+"";
 			if(this.lookingguild.member_count<=this.lookingguild.members.size) return;
 			this.ws.send(JSON.stringify(
@@ -1894,12 +1888,19 @@ class Localuser{
 							await Member.new(thing,this.lookingguild as Guild)
 						}
 					}
-					this.MDFineMentionGen(name,original);
+					this.MDFineMentionGen(name,original,box,typebox);
 				}
 			})
 		}
 	}
-	search(str:string,pre:boolean){
+	findEmoji(search:string,orginal:string,box:HTMLDivElement,typebox:MarkDown){
+		const emj=Emoji.searchEmoji(search,this,10);
+		const map=emj.map(([emoji]):[string,string,HTMLElement]=>{
+			return [emoji.name,emoji.id?`<${emoji.animated?"a":""}:${emoji.name}:${emoji.id}>`:emoji.emoji as string,emoji.getHTML()]
+		})
+		this.MDSearchOptions(map,orginal,box,typebox);
+	}
+	search(box:HTMLDivElement,md:MarkDown,str:string,pre:boolean){
 		if(!pre){
 			const match=str.match(this.autofillregex);
 
@@ -1907,23 +1908,23 @@ class Localuser{
 				const [type, search]=[match[0][0],match[0].split(/@|#|:/)[1]];
 				switch(type){
 					case "#":
-						this.MDFindChannel(search,str);
+						this.MDFindChannel(search,str,box,md);
 						break;
 					case "@":
-						this.MDFindMention(search,str);
+						this.MDFindMention(search,str,box,md);
 						break;
 					case ":":
 						if(search.length>=2){
-							console.log("implement me");
+							this.findEmoji(search,str,box,md)
+						}else{
+							this.MDSearchOptions([],"",box,md);
 						}
 						break;
 				}
 				return
 			}
 		}
-		const div=document.getElementById("searchOptions");
-		if(!div)return;
-		div.innerHTML="";
+		box.innerHTML="";
 	}
 	keydown:(event:KeyboardEvent)=>unknown=()=>{};
 	keyup:(event:KeyboardEvent)=>boolean=()=>false;
@@ -1939,11 +1940,11 @@ class Localuser{
 		}
 		const guild = this.guildids.get(guildid);
 		const borked = true;
-		if(borked && guild && guild.member_count > 250){
+		if( !guild || borked && guild.member_count > 250){
 			//sorry puyo, I need to fix member resolving while it's broken on large guilds
 			try{
 				const req = await fetch(
-					this.info.api + "/guilds/" + guild.id + "/members/" + id,
+					this.info.api + "/guilds/" + guildid + "/members/" + id,
 					{
 						headers: this.headers,
 					}
@@ -2110,15 +2111,12 @@ class Localuser{
 			headers: this.headers,
 		});
 		const json = await res.json();
-
-		const dialog = new Dialog([
-			"vdiv",
-			["title", I18n.getTranslation("instanceStats.name",this.instancePing.name) ],
-			["text", I18n.getTranslation("instanceStats.users",json.counts.user)],
-			["text", I18n.getTranslation("instanceStats.servers",json.counts.guild)],
-			["text", I18n.getTranslation("instanceStats.messages",json.counts.message)],
-			["text", I18n.getTranslation("instanceStats.members",json.counts.members)],
-		]);
+		const dialog = new Dialog("");
+		dialog.options.addTitle(I18n.getTranslation("instanceStats.name",this.instancePing.name));
+		dialog.options.addText(I18n.getTranslation("instanceStats.users",json.counts.user));
+		dialog.options.addText(I18n.getTranslation("instanceStats.servers",json.counts.guild));
+		dialog.options.addText(I18n.getTranslation("instanceStats.messages",json.counts.message));
+		dialog.options.addText(I18n.getTranslation("instanceStats.members",json.counts.members));
 		dialog.show();
 	}
 }

@@ -1,10 +1,10 @@
 import{ Channel }from"./channel.js";
-import{ Dialog }from"./dialog.js";
 import{ Emoji }from"./emoji.js";
 import{ Guild }from"./guild.js";
 import { I18n } from "./i18n.js";
 import{ Localuser }from"./localuser.js";
 import{ Member }from"./member.js";
+import { Dialog } from "./settings.js";
 
 class MarkDown{
 	txt: string[];
@@ -130,6 +130,17 @@ class MarkDown{
 					i++;
 				}
 			}
+			if(txt[i] === "\\"){
+				const chatset=new Set("\\`{}[]()<>*_#+-.!|".split(""));
+				if(chatset.has(txt[i+1])){
+					if(keep){
+						current.textContent += txt[i];
+					}
+					current.textContent += txt[i+1];
+					i++;
+					continue;
+				}
+			}
 			if(txt[i] === "\n"){
 				if(!stdsize){
 					appendcurrent();
@@ -152,13 +163,7 @@ class MarkDown{
 				let find = 0;
 				let j = i + count;
 				let init = true;
-				for(
-					;
-					txt[j] !== undefined &&
-(txt[j] !== "\n" || count === 3) &&
-find !== count;
-					j++
-				){
+				for(;txt[j] !== undefined &&(txt[j] !== "\n" || count === 3) &&find !== count;j++){
 					if(txt[j] === "`"){
 						find++;
 					}else{
@@ -540,29 +545,29 @@ txt[j + 1] === undefined)
 							});
 						else if(!parts[3] || parts[3] === "f")
 							time =
-	dateInput.toLocaleString(void 0, {
-		day: "numeric",
-		month: "long",
-		year: "numeric",
-	}) +
-	" " +
-	dateInput.toLocaleString(void 0, {
-		hour: "2-digit",
-		minute: "2-digit",
-	});
+							dateInput.toLocaleString(void 0, {
+								day: "numeric",
+								month: "long",
+								year: "numeric",
+							}) +
+							" " +
+							dateInput.toLocaleString(void 0, {
+								hour: "2-digit",
+								minute: "2-digit",
+							});
 						else if(parts[3] === "F")
 							time =
-	dateInput.toLocaleString(void 0, {
-		day: "numeric",
-		month: "long",
-		year: "numeric",
-		weekday: "long",
-	}) +
-	" " +
-	dateInput.toLocaleString(void 0, {
-		hour: "2-digit",
-		minute: "2-digit",
-	});
+							dateInput.toLocaleString(void 0, {
+								day: "numeric",
+								month: "long",
+								year: "numeric",
+								weekday: "long",
+							}) +
+							" " +
+							dateInput.toLocaleString(void 0, {
+								hour: "2-digit",
+								minute: "2-digit",
+							});
 						else if(parts[3] === "t")
 							time = dateInput.toLocaleString(void 0, {
 								hour: "2-digit",
@@ -575,10 +580,7 @@ txt[j + 1] === undefined)
 								second: "2-digit",
 							});
 						else if(parts[3] === "R")
-							time =
-	Math.round(
-		(Date.now() - Number.parseInt(parts[1]) * 1000) / 1000 / 60
-	) + " minutes ago";
+							time =Math.round((Date.now() - Number.parseInt(parts[1]) * 1000) / 1000 / 60) + " minutes ago";
 					}
 
 					const timeElem = document.createElement("span");
@@ -589,10 +591,7 @@ txt[j + 1] === undefined)
 				}
 			}
 
-			if(
-				txt[i] === "<" &&
-	(txt[i + 1] === ":" || (txt[i + 1] === "a" && txt[i + 2] === ":")&&this.owner)
-			){
+			if(txt[i] === "<" && (txt[i + 1] === ":" || (txt[i + 1] === "a" && txt[i + 2] === ":")&&this.owner)){
 				let found = false;
 				const build = txt[i + 1] === "a" ? ["<", "a", ":"] : ["<", ":"];
 				let j = i + build.length;
@@ -612,8 +611,7 @@ txt[j + 1] === undefined)
 						appendcurrent();
 						i = j;
 						const isEmojiOnly = txt.join("").trim() === buildjoin.trim();
-						const owner =
-	this.owner instanceof Channel ? this.owner.guild : this.owner;
+						const owner = this.owner instanceof Channel ? this.owner.guild : this.owner;
 						if(!owner) continue;
 						const emoji = new Emoji(
 							{ name: buildjoin, id: parts[2], animated: Boolean(parts[1]) },
@@ -688,7 +686,9 @@ txt[j + 1] === undefined)
 		e.target.classList.add("unspoiled");
 	}
 	onUpdate:(upto:string,pre:boolean)=>unknown=()=>{};
+	box=new WeakRef(document.createElement("div"));
 	giveBox(box: HTMLDivElement,onUpdate:(upto:string,pre:boolean)=>unknown=()=>{}){
+		this.box=new WeakRef(box);
 		this.onUpdate=onUpdate;
 		box.onkeydown = _=>{
 			//console.log(_);
@@ -699,7 +699,7 @@ txt[j + 1] === undefined)
 			if(content !== prevcontent){
 				prevcontent = content;
 				this.txt = content.split("");
-				this.boxupdate(box);
+				this.boxupdate();
 				MarkDown.gatherBoxText(box);
 			}
 
@@ -715,8 +715,10 @@ txt[j + 1] === undefined)
 			box.onkeyup(new KeyboardEvent("_"));
 		};
 	}
-	boxupdate(box: HTMLElement){
-		const restore = saveCaretPosition(box);
+	boxupdate(offset=0){
+		const box=this.box.deref();
+		if(!box) return;
+		const restore = saveCaretPosition(box,offset);
 		box.innerHTML = "";
 		box.append(this.makeHTML({ keep: true }));
 		if(restore){
@@ -779,37 +781,20 @@ txt[j + 1] === undefined)
 				if(this.trustedDomains.has(Url.host)){
 					open();
 				}else{
-					const full: Dialog = new Dialog([
-						"vdiv",
-						["title", I18n.getTranslation("leaving")],
-						[
-							"text",
-							I18n.getTranslation("goingToURL",Url.host)
-						],
-						[
-							"hdiv",
-							["button", "", I18n.getTranslation("nevermind"), (_: any)=>full.hide()],
-							[
-								"button",
-								"",
-								I18n.getTranslation("goThere"),
-								(_: any)=>{
-									open();
-									full.hide();
-								},
-							],
-							[
-								"button",
-								"",
-								I18n.getTranslation("goThereTrust"),
-								(_: any)=>{
-									open();
-									full.hide();
-									this.trustedDomains.add(Url.host);
-								},
-							],
-						],
-					]);
+					const full=new Dialog("");
+					full.options.addTitle(I18n.getTranslation("leaving"));
+					full.options.addText(I18n.getTranslation("goingToURL",Url.host));
+					const options=full.options.addOptions("",{ltr:true});
+					options.addButtonInput("",I18n.getTranslation("nevermind"),()=>full.hide());
+					options.addButtonInput("",I18n.getTranslation("goThere"),()=>{
+						open();
+						full.hide();
+					});
+					options.addButtonInput("",I18n.getTranslation("goThereTrust"),()=>{
+						open();
+						full.hide();
+						this.trustedDomains.add(Url.host);
+					});
 					full.show();
 				}
 			};
@@ -831,88 +816,94 @@ txt[j + 1] === undefined)
 //solution from https://stackoverflow.com/questions/4576694/saving-and-restoring-caret-position-for-contenteditable-div
 let text = "";
 let formatted=false;
-function saveCaretPosition(context: HTMLElement){
+function saveCaretPosition(context: HTMLElement,offset=0){
 	const selection = window.getSelection() as Selection;
 	if(!selection)return;
-	const range = selection.getRangeAt(0);
-	let base=selection.anchorNode as Node;
-	range.setStart(base, 0);
-	let baseString:string;
-	if(!(base instanceof Text)){
-		let i=0;
-		const index=selection.focusOffset;
-		//@ts-ignore
-		for(const thing of base.childNodes){
-			if(i===index){
-				base=thing;
-				break;
+	try{
+		const range = selection.getRangeAt(0);
+
+		let base=selection.anchorNode as Node;
+		range.setStart(base, 0);
+		let baseString:string;
+		if(!(base instanceof Text)){
+			let i=0;
+			const index=selection.focusOffset;
+			//@ts-ignore
+			for(const thing of base.childNodes){
+				if(i===index){
+					base=thing;
+					break;
+				}
+				i++;
 			}
-			i++;
-		}
-		if(base instanceof HTMLElement){
-			baseString=MarkDown.gatherBoxText(base)
+			if(base instanceof HTMLElement){
+				baseString=MarkDown.gatherBoxText(base)
+			}else{
+				baseString=base.textContent as string;
+			}
 		}else{
-			baseString=base.textContent as string;
+			baseString=selection.toString();
 		}
-	}else{
-		baseString=selection.toString();
-	}
 
 
-	range.setStart(context, 0);
+		range.setStart(context, 0);
 
-	let build="";
-	//I think this is working now :3
-	function crawlForText(context:Node){
-		//@ts-ignore
-		const children=[...context.childNodes];
-		if(children.length===1&&children[0] instanceof Text){
-			if(selection.containsNode(context,false)){
-				build+=MarkDown.gatherBoxText(context as HTMLElement);
-			}else if(selection.containsNode(context,true)){
-				if(context.contains(base)||context===base||base.contains(context)){
-					build+=baseString;
+		let build="";
+		//I think this is working now :3
+		function crawlForText(context:Node){
+			//@ts-ignore
+			const children=[...context.childNodes];
+			if(children.length===1&&children[0] instanceof Text){
+				if(selection.containsNode(context,false)){
+					build+=MarkDown.gatherBoxText(context as HTMLElement);
+				}else if(selection.containsNode(context,true)){
+					if(context.contains(base)||context===base||base.contains(context)){
+						build+=baseString;
+					}else{
+						build+=context.textContent;
+					}
 				}else{
-					build+=context.textContent;
+					console.error(context);
 				}
-			}else{
-				console.error(context);
+				return;
 			}
-			return;
-		}
-		for(const node of children as Node[]){
+			for(const node of children as Node[]){
 
-			if(selection.containsNode(node,false)){
-				if(node instanceof HTMLElement){
-					build+=MarkDown.gatherBoxText(node);
+				if(selection.containsNode(node,false)){
+					if(node instanceof HTMLElement){
+						build+=MarkDown.gatherBoxText(node);
+					}else{
+						build+=node.textContent;
+					}
+				}else if(selection.containsNode(node,true)){
+					if(node instanceof HTMLElement){
+						crawlForText(node);
+					}else{
+						console.error(node,"This shouldn't happen")
+					}
 				}else{
-					build+=node.textContent;
+					//console.error(node,"This shouldn't happen");
 				}
-			}else if(selection.containsNode(node,true)){
-				if(node instanceof HTMLElement){
-					crawlForText(node);
-				}else{
-					console.error(node,"This shouldn't happen")
-				}
-			}else{
-				console.error(node,"This shouldn't happen");
 			}
 		}
+		crawlForText(context);
+		if(baseString==="\n"){
+			build+=baseString;
+		}
+		text=build;
+		let len=build.length+offset;
+		len=Math.min(len,MarkDown.gatherBoxText(context).length)
+		return function restore(){
+			if(!selection)return;
+			const pos = getTextNodeAtPosition(context, len);
+			selection.removeAllRanges();
+			const range = new Range();
+			range.setStart(pos.node, pos.position);
+			selection.addRange(range);
+		};
+	}catch{
+		return undefined;
 	}
-	crawlForText(context);
-	if(baseString==="\n"){
-		build+=baseString;
-	}
-	text=build;
-	const len=build.length;
-	return function restore(){
-		if(!selection)return;
-		const pos = getTextNodeAtPosition(context, len);
-		selection.removeAllRanges();
-		const range = new Range();
-		range.setStart(pos.node, pos.position);
-		selection.addRange(range);
-	};
 }
 
 function getTextNodeAtPosition(root: Node, index: number):{
@@ -935,29 +926,45 @@ function getTextNodeAtPosition(root: Node, index: number):{
 			position: -1,
 		};
 	}
+	let lastElm:Node=root;
 	for(const node of root.childNodes as unknown as Node[]){
+		lastElm=node;
 		let len:number
 		if(node instanceof HTMLElement){
 			len=MarkDown.gatherBoxText(node).length;
 		}else{
 			len=(node.textContent as string).length
 		}
-		if(len<index){
+		if(len<=index&&(len<index||len!==0)){
 			index-=len;
 		}else{
 			const returny=getTextNodeAtPosition(node,index);
 			if(returny.position===-1){
+				console.warn("in here");
 				index=0;
 				continue;
 			}
 			return returny;
 		}
 	}
+	if( !((lastElm instanceof HTMLElement && lastElm.hasAttribute("real")))){
+		while(lastElm&&!(lastElm instanceof Text||lastElm instanceof HTMLBRElement)){
+			lastElm=lastElm.childNodes[lastElm.childNodes.length-1];
+		}
+		if(lastElm){
+			const position=(lastElm.textContent as string).length;
+			return{
+				node: lastElm,
+				position
+			};
+		}
+	}
 	const span=document.createElement("span");
-	root.appendChild(span)
-	return{
-		node: span,
-		position: 0,
-	};
+		root.appendChild(span)
+		return{
+			node: span,
+			position: 0,
+		};
+
 }
 export{ MarkDown , saveCaretPosition, getTextNodeAtPosition};

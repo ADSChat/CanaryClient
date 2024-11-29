@@ -14,7 +14,9 @@ class Buttons implements OptionsElement<unknown>{
 	buttonList!: HTMLDivElement;
 	warndiv!: HTMLElement;
 	value: unknown;
-	constructor(name: string){
+	top=false;
+	constructor(name: string,{top=false}={}){
+		this.top=top;
 		this.buttons = [];
 		this.name = name;
 	}
@@ -28,7 +30,7 @@ class Buttons implements OptionsElement<unknown>{
 	generateHTML(){
 		const buttonList = document.createElement("div");
 		buttonList.classList.add("Buttons");
-		buttonList.classList.add("flexltr");
+		buttonList.classList.add(this.top?"flexttb":"flexltr");
 		this.buttonList = buttonList;
 		const htmlarea = document.createElement("div");
 		htmlarea.classList.add("flexgrow");
@@ -43,6 +45,9 @@ class Buttons implements OptionsElement<unknown>{
 	generateButtons(optionsArea:HTMLElement){
 		const buttonTable = document.createElement("div");
 		buttonTable.classList.add("settingbuttons");
+		if(this.top){
+			buttonTable.classList.add("flexltr");
+		}
 		for(const thing of this.buttons){
 			const button = document.createElement("button");
 			button.classList.add("SettingsButton");
@@ -328,6 +333,7 @@ class SelectInput implements OptionsElement<number>{
 	options: string[];
 	index: number;
 	select!: WeakRef<HTMLSelectElement>;
+	radio:boolean;
 	get value(){
 		return this.index;
 	}
@@ -336,15 +342,61 @@ class SelectInput implements OptionsElement<number>{
 		onSubmit: (str: number) => void,
 		options: string[],
 		owner: Options,
-		{ defaultIndex = 0 } = {}
+		{ defaultIndex = 0,radio=false } = {}
 	){
 		this.label = label;
 		this.index = defaultIndex;
 		this.owner = owner;
 		this.onSubmit = onSubmit;
 		this.options = options;
+		this.radio=radio;
 	}
 	generateHTML(): HTMLDivElement{
+		if(this.radio){
+			const map=new WeakMap<HTMLInputElement,number>();
+			const div = document.createElement("div");
+			const fieldset = document.createElement("fieldset");
+			fieldset.addEventListener("change", ()=>{
+				let i = -1;
+				for(const thing of Array.from(fieldset.children)){
+					i++;
+					if(i === 0){
+						continue;
+					}
+					const checkbox = thing.children[0].children[0] as HTMLInputElement;
+					if(checkbox.checked){
+						this.onChange(map.get(checkbox));
+					}
+				}
+			});
+			const legend = document.createElement("legend");
+			legend.textContent = this.label;
+			fieldset.appendChild(legend);
+			let i = 0;
+			for(const thing of this.options){
+				const div = document.createElement("div");
+				const input = document.createElement("input");
+				input.classList.add("radio");
+				input.type = "radio";
+				input.name = this.label;
+				input.value = thing;
+				map.set(input,i);
+				if(i === this.index){
+					input.checked = true;
+				}
+				const label = document.createElement("label");
+
+				label.appendChild(input);
+				const span = document.createElement("span");
+				span.textContent = thing;
+				label.appendChild(span);
+				div.appendChild(label);
+				fieldset.appendChild(div);
+				i++;
+			}
+			div.appendChild(fieldset);
+			return div;
+		}
 		const div = document.createElement("div");
 		const span = document.createElement("span");
 		span.textContent = this.label;
@@ -353,7 +405,7 @@ class SelectInput implements OptionsElement<number>{
 		selectSpan.classList.add("selectspan");
 		const select = document.createElement("select");
 
-		select.onchange = this.onChange.bind(this);
+		select.onchange = this.onChange.bind(this,-1);
 		for(const thing of this.options){
 			const option = document.createElement("option");
 			option.textContent = thing;
@@ -368,8 +420,13 @@ class SelectInput implements OptionsElement<number>{
 		div.append(selectSpan);
 		return div;
 	}
-	private onChange(){
+	private onChange(index=-1){
 		this.owner.changed();
+		if(index!==-1){
+			this.onchange(index);
+			this.index = index;
+			return;
+		}
 		const select = this.select.deref();
 		if(select){
 			const value = select.selectedIndex;
@@ -516,11 +573,59 @@ class HtmlArea implements OptionsElement<void>{
 	}
 	watchForChange(){}
 }
+/**
+* This is a simple wrapper class for Options to make it happy so it can be used outside of Settings.
+*/
+class Float{
+	options:Options;
+	/**
+	 * This is a simple wrapper class for Options to make it happy so it can be used outside of Settings.
+	 */
+	constructor(name:string, options={ ltr:false, noSubmit:true}){
+		this.options=new Options(name,this,options)
+	}
+	changed=()=>{};
+	generateHTML(){
+		return this.options.generateHTML();
+	}
+}
+class Dialog{
+	float:Float;
+	get options(){
+		return this.float.options;
+	}
+	background=new WeakRef(document.createElement("div"));
+	constructor(name:string, { ltr=false, noSubmit=true}={}){
+		this.float=new Float(name,{ltr,noSubmit});
+	}
+	show(){
+		const background = document.createElement("div");
+		background.classList.add("background");
+		const center=this.float.generateHTML();
+		center.classList.add("centeritem","nonimagecenter");
+		center.classList.remove("titlediv");
+		background.append(center);
+		center.onclick=e=>{
+			e.stopImmediatePropagation();
+		}
+		document.body.append(background);
+		this.background=new WeakRef(background);
+		background.onclick = _=>{
+			background.remove();
+		};
+	}
+	hide(){
+		const background=this.background.deref();
+		if(!background) return;
+		background.remove();
+	}
+}
+export{Dialog};
 class Options implements OptionsElement<void>{
 	name: string;
 	haschanged = false;
 	readonly options: OptionsElement<any>[];
-	readonly owner: Buttons | Options | Form;
+	readonly owner: Buttons | Options | Form | Float;
 	readonly ltr: boolean;
 	value!: void;
 	readonly html: WeakMap<OptionsElement<any>, WeakRef<HTMLDivElement>> = new WeakMap();
@@ -530,7 +635,7 @@ class Options implements OptionsElement<void>{
 	);
 	constructor(
 		name: string,
-		owner: Buttons | Options | Form,
+		owner: Buttons | Options | Form | Float,
 		{ ltr = false, noSubmit=false} = {}
 	){
 		this.name = name;
@@ -554,6 +659,12 @@ class Options implements OptionsElement<void>{
 		this.options.push(options);
 		this.generate(options);
 		return options;
+	}
+	addButtons(name: string, { top = false } = {}){
+		const buttons = new Buttons(name, { top });
+		this.options.push(buttons);
+		this.generate(buttons);
+		return buttons;
 	}
 	subOptions: Options | Form | undefined;
 	genTop(){
@@ -580,7 +691,7 @@ class Options implements OptionsElement<void>{
 	}
 	addSubForm(
 		name: string,
-		onSubmit: (arg1: object) => void,
+		onSubmit: (arg1: object,sent:object) => void,
 		{
 			ltr = false,
 			submitText = "Submit",
@@ -610,10 +721,10 @@ class Options implements OptionsElement<void>{
 		label: string,
 		onSubmit: (str: number) => void,
 		selections: string[],
-		{ defaultIndex = 0 } = {}
+		{ defaultIndex = 0,radio=false } = {}
 	){
 		const select = new SelectInput(label, onSubmit, selections, this, {
-			defaultIndex,
+			defaultIndex,radio
 		});
 		this.options.push(select);
 		this.generate(select);
@@ -693,6 +804,12 @@ class Options implements OptionsElement<void>{
 		this.generate(text);
 		return text;
 	}
+	addHR(){
+		const rule = new HorrizonalRule();
+		this.options.push(rule);
+		this.generate(rule);
+		return rule;
+	}
 	addTitle(str: string){
 		const text = new SettingsTitle(str);
 		this.options.push(text);
@@ -701,7 +818,7 @@ class Options implements OptionsElement<void>{
 	}
 	addForm(
 		name: string,
-		onSubmit: (arg1: object) => void,
+		onSubmit: (arg1: object,sent:object) => void,
 		{
 			ltr = false,
 			submitText = "Submit",
@@ -740,6 +857,9 @@ class Options implements OptionsElement<void>{
 	generateHTML(): HTMLElement{
 		const div = document.createElement("div");
 		div.classList.add("flexttb","titlediv");
+		if(this.owner instanceof Options){
+			div.classList.add("optionElement");
+		}
 		const title = document.createElement("h2");
 		title.textContent = this.name;
 		div.append(title);
@@ -885,7 +1005,7 @@ class Form implements OptionsElement<object>{
 	constructor(
 		name: string,
 		owner: Options,
-		onSubmit: (arg1: object) => void,
+		onSubmit: (arg1: object,sent:object) => void,
 		{
 			ltr = false,
 			submitText = I18n.getTranslation("submit"),
@@ -918,7 +1038,7 @@ class Form implements OptionsElement<object>{
 	}
 	addSubForm(
 		name: string,
-		onSubmit: (arg1: object) => void,
+		onSubmit: (arg1: object,sent:object) => void,
 		{
 			ltr = false,
 			submitText = I18n.getTranslation("submit"),
@@ -940,16 +1060,16 @@ class Form implements OptionsElement<object>{
 			(this.button.deref() as HTMLElement).hidden=false;
 		}
 	}
-	selectMap=new WeakMap<SelectInput,string[]>();
+	selectMap=new WeakMap<SelectInput,(number|string|null)[]>();
 	addSelect(
 		label: string,
 		formName: string,
 		selections: string[],
-		{ defaultIndex = 0, required = false}={},
-		correct:string[]=selections
+		{ defaultIndex = 0, required = false,radio=false}={},
+		correct:(string|number|null)[]=selections
 	){
 		const select = this.options.addSelect(label, _=>{}, selections, {
-			defaultIndex,
+			defaultIndex,radio
 		});
 		this.selectMap.set(select,correct);
 		this.names.set(formName, select);
@@ -1046,6 +1166,9 @@ class Form implements OptionsElement<object>{
 	addText(str: string){
 		return this.options.addText(str);
 	}
+	addHR(){
+		return this.options.addHR();
+	}
 	addTitle(str: string){
 		this.options.addTitle(str);
 	}
@@ -1068,7 +1191,7 @@ class Form implements OptionsElement<object>{
 		}
 		return div;
 	}
-	onSubmit: (arg1: object) => void;
+	onSubmit: ((arg1: object,sent:object) => void )|((arg1: object,sent:object) => Promise<void> );
 	watchForChange(func: (arg1: object) => void){
 		this.onSubmit = func;
 	}
@@ -1145,38 +1268,84 @@ class Form implements OptionsElement<object>{
 		}
 		console.log("middle2");
 		await Promise.allSettled(promises);
-		this.preprocessor(build);
+		try{
+			this.preprocessor(build);
+		}catch(e){
+			if(e instanceof FormError){
+				const elm = this.options.html.get(e.elem);
+				if(elm){
+					const html = elm.deref();
+					if(html){
+						this.makeError(html, e.message);
+					}
+				}
+			}
+			return;
+		}
 		if(this.fetchURL !== ""){
 			fetch(this.fetchURL, {
 				method: this.method,
 				body: JSON.stringify(build),
 				headers: this.headers,
 			})
-				.then(_=>_.json())
-				.then(json=>{
-					if(json.errors && this.errors(json.errors))return;
-					this.onSubmit(json);
+				.then(_=>{
+					return _.text()
+				}).then(_=>{
+					if(_==="") return {};
+					return JSON.parse(_)
+				})
+				.then(async json=>{
+					if(json.errors){
+						if(this.errors(json)){
+							return;
+						}
+					}
+					try{
+						await this.onSubmit(json,build);
+					}catch(e){
+						console.error(e);
+						if(e instanceof FormError){
+							const elm = this.options.html.get(e.elem);
+							if(elm){
+								const html = elm.deref();
+								if(html){
+									this.makeError(html, e.message);
+								}
+							}
+						}
+						return;
+					}
 				});
 		}else{
-			this.onSubmit(build);
+			try{
+				await this.onSubmit(build,build);
+			}catch(e){
+				if(e instanceof FormError){
+					const elm = this.options.html.get(e.elem);
+					if(elm){
+						const html = elm.deref();
+						if(html){
+							this.makeError(html, e.message);
+						}
+					}
+				}
+				return;
+			}
 		}
 		console.warn("needs to be implemented");
 	}
-	errors(errors: {
-																																		code: number;
-																																		message: string;
-																																		errors: { [key: string]: { _errors: { message: string; code: string } } };
-																																		}){
+	errors(errors: {code: number; message: string; errors: { [key: string]: { _errors: { message: string; code: string }[] } }}){
 		if(!(errors instanceof Object)){
 			return;
 		}
-		for(const error of Object.keys(errors)){
+		for(const error of Object.keys(errors.errors)){
 			const elm = this.names.get(error);
 			if(elm){
 				const ref = this.options.html.get(elm);
 				if(ref && ref.deref()){
 					const html = ref.deref() as HTMLDivElement;
-					this.makeError(html, errors.errors[error]._errors.message);
+					const errorMessage=errors.errors[error]._errors[0].message;
+					this.makeError(html, errorMessage);
 					return true;
 				}
 			}
@@ -1212,6 +1381,17 @@ class Form implements OptionsElement<object>{
 		}
 		element.textContent = message;
 	}
+}
+class HorrizonalRule implements OptionsElement<unknown>{
+	constructor(){}
+	generateHTML(): HTMLElement {
+		return document.createElement("hr");
+	}
+	watchForChange (_: (arg1: undefined) => void){
+		throw new Error("don't do this")
+	};
+	submit= () => {};
+	value=undefined;
 }
 class Settings extends Buttons{
 	static readonly Buttons = Buttons;
@@ -1253,4 +1433,4 @@ class Settings extends Buttons{
 	}
 }
 
-export{ Settings, OptionsElement, Buttons, Options,Form };
+export{ Settings, OptionsElement, Buttons, Options,Form,Float };

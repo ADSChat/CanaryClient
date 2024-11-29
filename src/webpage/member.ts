@@ -3,8 +3,8 @@ import{ Role }from"./role.js";
 import{ Guild }from"./guild.js";
 import{ SnowFlake }from"./snowflake.js";
 import{ memberjson, presencejson }from"./jsontypes.js";
-import{ Dialog }from"./dialog.js";
 import { I18n } from "./i18n.js";
+import { Dialog } from "./settings.js";
 
 class Member extends SnowFlake{
 	static already = {};
@@ -54,6 +54,10 @@ class Member extends SnowFlake{
 		this.roles.sort((a, b)=>{
 			return this.guild.roles.indexOf(a) - this.guild.roles.indexOf(b);
 		});
+	}
+	remove(){
+		this.user.members.delete(this.guild);
+		this.guild.members.delete(this);
 	}
 	update(memberjson: memberjson){
 		this.roles=[];
@@ -135,7 +139,7 @@ class Member extends SnowFlake{
 			}
 			return 0;
 		}
-		return Math.max(similar(this.user.name),similar(this.user.nickname),similar(this.nick),similar(this.user.username),similar(this.id));
+		return Math.max(similar(this.user.name),similar(this.user.nickname),similar(this.nick),similar(this.user.username),similar(this.id)/1.5);
 	}
 	static async resolveMember(
 		user: User,
@@ -158,6 +162,7 @@ class Member extends SnowFlake{
 				}
 			});
 			user.members.set(guild, promise);
+			return await promise;
 		}
 		if(maybe instanceof Promise){
 			return await maybe;
@@ -228,28 +233,13 @@ class Member extends SnowFlake{
 		return this.nick || this.user.username;
 	}
 	kick(){
-		let reason = "";
-		const menu = new Dialog([
-			"vdiv",
-			["title", I18n.getTranslation("member.kick",this.name,this.guild.properties.name)],
-			[
-				"textbox",
-				I18n.getTranslation("member.reason:"),
-				"",
-				function(e: Event){
-					reason = (e.target as HTMLInputElement).value;
-				},
-			],
-			[
-				"button",
-				"",
-				I18n.getTranslation("submit"),
-				()=>{
-					this.kickAPI(reason);
-					menu.hide();
-				},
-			],
-		]);
+		const menu = new Dialog("");
+		const form=menu.options.addForm("",((e:any)=>{
+			this.kickAPI(e.reason);
+			menu.hide();
+		}));
+		form.addTitle(I18n.getTranslation("member.kick",this.name,this.guild.properties.name));
+		form.addTextInput(I18n.getTranslation("member.reason:"),"reason");
 		menu.show();
 	}
 	kickAPI(reason: string){
@@ -261,28 +251,13 @@ class Member extends SnowFlake{
 		});
 	}
 	ban(){
-		let reason = "";
-		const menu = new Dialog([
-			"vdiv",
-			["title", I18n.getTranslation("member.ban",this.name,this.guild.properties.name)],
-			[
-				"textbox",
-				I18n.getTranslation("member.reason:",this.name,this.guild.properties.name),
-				"",
-				function(e: Event){
-					reason = (e.target as HTMLInputElement).value;
-				},
-			],
-			[
-				"button",
-				"",
-				I18n.getTranslation("submit",this.name,this.guild.properties.name),
-				()=>{
-					this.banAPI(reason);
-					menu.hide();
-				},
-			],
-		]);
+		const menu = new Dialog("");
+		const form=menu.options.addForm("",((e:any)=>{
+			this.banAPI(e.reason);
+			menu.hide();
+		}));
+		form.addTitle(I18n.getTranslation("member.ban",this.name,this.guild.properties.name));
+		form.addTextInput(I18n.getTranslation("member.reason:"),"reason");
 		menu.show();
 	}
 	addRole(role:Role){

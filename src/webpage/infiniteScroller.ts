@@ -21,6 +21,24 @@ offset: number
 	changePromise: Promise<boolean> | undefined;
 	scollDiv!: { scrollTop: number; scrollHeight: number; clientHeight: number };
 
+	resetVars(){
+		this.scrollTop=0;
+		this.scrollBottom=0;
+		this.averageheight=60;
+		this.watchtime=false;
+		this.needsupdate=true;
+		this.beenloaded=false;
+		this.changePromise=undefined;
+		if(this.timeout){
+			clearTimeout(this.timeout);
+			this.timeout=null;
+		}
+		for(const thing of this.HTMLElements){
+			this.destroyFromID(thing[1]);
+		}
+		this.HTMLElements=[];
+		this.div=null;
+	}
 	constructor(
 		getIDFromOffset: InfiniteScroller["getIDFromOffset"],
 		getHTMLFromID: InfiniteScroller["getHTMLFromID"],
@@ -37,7 +55,7 @@ offset: number
 		if(this.div){
 			throw new Error("Div already exists, exiting.");
 		}
-
+		this.resetVars();
 		const scroll = document.createElement("div");
 		scroll.classList.add("scroller");
 		this.div = scroll;
@@ -268,7 +286,6 @@ offset: number
 
 		return await this.changePromise;
 	}
-
 	async focus(id: string, flash = true): Promise<void>{
 		let element: HTMLElement | undefined;
 		for(const thing of this.HTMLElements){
@@ -294,6 +311,8 @@ offset: number
 				element.scrollIntoView();
 			}
 		}else{
+			this.resetVars();
+			//TODO may be a redundant loop, not 100% sure :P
 			for(const thing of this.HTMLElements){
 				await this.destroyFromID(thing[1]);
 			}
@@ -313,6 +332,7 @@ offset: number
 			this.div.remove();
 			this.div = null;
 		}
+		this.resetVars();
 		try{
 			for(const thing of this.HTMLElements){
 				await this.destroyFromID(thing[1]);

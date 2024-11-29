@@ -1,6 +1,6 @@
 import{ Message }from"./message.js";
-import{ Dialog }from"./dialog.js";
 import{ filejson }from"./jsontypes.js";
+import { ImagesDisplay } from "./disimg.js";
 
 class File{
 	owner: Message | null;
@@ -40,7 +40,7 @@ class File{
 			img.classList.add("messageimg");
 			div.classList.add("messageimgdiv");
 			img.onclick = function(){
-				const full = new Dialog(["img", img.src, ["fit"]]);
+				const full = new ImagesDisplay([img.src]);
 				full.show();
 			};
 			img.src = src;
@@ -49,8 +49,6 @@ class File{
 				div.style.width = this.width + "px";
 				div.style.height = this.height + "px";
 			}
-			console.log(img);
-			console.log(this.width, this.height);
 			return div;
 		}else if(this.content_type.startsWith("video/")){
 			const video = document.createElement("video");

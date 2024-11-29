@@ -63,7 +63,7 @@ type readyjson = {
 		};
 		user_guild_settings: {
 			entries: {
-				channel_overrides: unknown[]; //will have to find example
+				channel_overrides: {message_notifications: number,muted: boolean,mute_config: {selected_time_window: number,end_time: number},channel_id: string}[];
 				message_notifications: number;
 				flags: number;
 				hide_muted_channels: boolean;
@@ -166,6 +166,7 @@ type emojijson = {
 	name: string;
 	id?: string;
 	animated?: boolean;
+	emoji?:string
 };
 
 type guildjson = {
@@ -504,7 +505,43 @@ roleCreate | {
 	op:9,
 	d:boolean,
 	s:number
-}|memberlistupdatejson|voiceupdate|voiceserverupdate;
+}|memberlistupdatejson|voiceupdate|voiceserverupdate|{
+    op: 0,
+    t: "RELATIONSHIP_ADD",
+    d: {
+        id: string,
+        type: 0|1|2|3|4|5|6,
+        user: userjson
+    },
+    s: number
+}|{
+    op: 0,
+    t: "RELATIONSHIP_REMOVE",
+    d: {
+        id: string,
+        type: number,
+        nickname: null
+    },
+    s: number
+}|{
+    op: 0,
+    t: "PRESENCE_UPDATE",
+    d: presencejson,
+    s:number
+}|{
+	op:0,
+	t:"GUILD_MEMBER_ADD",
+	d:memberjson,
+	s:number
+}|{
+	op:0,
+	t:"GUILD_MEMBER_REMOVE",
+	d:{
+		guild_id:string,
+		user:userjson
+	},
+	s:number
+};
 
 
 type memberChunk = {

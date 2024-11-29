@@ -1,6 +1,6 @@
 {
   "name": "jankclient",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A SpaceBar Client written in TS HTML and CSS to run, clone the repo and do either `npm start` or `bun start` both bun and node are supported, and both should function as expected. To access Jank Client after init simply go to http://localhost:8080/login and login with your username and password.",
   "main": ".dist/index.js",
   "type": "module",
@@ -12,20 +12,22 @@
   "author": "MathMan05",
   "license": "GPL-3.0",
   "dependencies": {
-    "@html-eslint/parser": "^0.27.0",
-    "@stylistic/eslint-plugin-js": "^2.8.0",
-    "@swc/core": "^1.7.26",
-    "@typescript-eslint/eslint-plugin": "^8.6.0",
-    "@typescript-eslint/parser": "^8.6.0",
     "compression": "^1.7.4",
-    "eslint-plugin-html": "^8.1.1",
     "express": "^4.19.2",
     "gulp-sourcemaps": "^3.0.0",
     "gulp-swc": "^2.2.0",
-    "rimraf": "^6.0.1",
-    "ts-to-jsdoc": "^2.2.0"
+    "rimraf": "^6.0.1"
   },
   "devDependencies": {
+    "@html-eslint/parser": "^0.27.0",
+    "eslint-plugin-html": "^8.1.1",
+    "@stylistic/eslint-plugin-js": "^2.8.0",
+    "@typescript-eslint/eslint-plugin": "^8.14.0",
+    "@typescript-eslint/parser": "^8.14.0",
+    "@rsbuild/core": "^1.1.4",
+    "@rsbuild/plugin-node-polyfill": "^1.2.0",
+    "@swc/core": "^1.7.26",
+    "swc": "^1.0.11",
     "@eslint/js": "^9.10.0",
     "@html-eslint/eslint-plugin": "^0.25.0",
     "@stylistic/eslint-plugin": "^2.3.0",
@@ -41,6 +43,6 @@
     "gulp-plumber": "^1.2.1",
     "gulp-typescript": "^6.0.0-alpha.1",
     "typescript": "^5.6.2",
-    "typescript-eslint": "^8.6.0"
+    "typescript-eslint": "^8.14.0"
   }
 }

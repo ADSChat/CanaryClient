@@ -1,17 +1,9 @@
-import{ Dialog }from"./dialog.js";
 import { I18n } from "./i18n.js";
+import { Dialog, FormError } from "./settings.js";
 
 const mobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 const iOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
 
-function setTheme(){
-	let name = localStorage.getItem("theme");
-	if(!name){
-		localStorage.setItem("theme", "Dark");
-		name = "Dark";
-	}
-	document.body.className = name + "-theme";
-}
 let instances:
 | {
 name: string;
@@ -31,6 +23,74 @@ login?: string;
 };
 }[]
 | null;
+const datalist = document.getElementById("instances");
+console.warn(datalist);
+const instancefetch=fetch("/instances.json")
+	.then(res=>res.json())
+	.then(
+		(json: {
+			name: string;
+			description?: string;
+			descriptionLong?: string;
+			image?: string;
+			url?: string;
+			display?: boolean;
+			online?: boolean;
+			uptime: { alltime: number; daytime: number; weektime: number };
+			urls: {
+				wellknown: string;
+				api: string;
+				cdn: string;
+				gateway: string;
+				login?: string;
+			}
+		}[]
+		)=>{
+			instances = json;
+			if(datalist){
+				console.warn(json);
+				if(instancein && instancein.value === ""){
+					instancein.value = json[0].name;
+				}
+				for(const instance of json){
+					if(instance.display === false){
+						continue;
+					}
+					const option = document.createElement("option");
+					option.disabled = !instance.online;
+					option.value = instance.name;
+					if(instance.url){
+						stringURLMap.set(option.value, instance.url);
+						if(instance.urls){
+							stringURLsMap.set(instance.url, instance.urls);
+						}
+					}else if(instance.urls){
+						stringURLsMap.set(option.value, instance.urls);
+					}else{
+						option.disabled = true;
+					}
+					if(instance.description){
+						option.label = instance.description;
+					}else{
+						option.label = instance.name;
+					}
+					datalist.append(option);
+				}
+				checkInstance("");
+			}
+		}
+	);
+setTheme();
+await I18n.done
+function setTheme(){
+	let name = localStorage.getItem("theme");
+	if(!name){
+		localStorage.setItem("theme", "Dark");
+		name = "Dark";
+	}
+	document.body.className = name + "-theme";
+}
+
 
 (async ()=>{
 	await I18n.done
@@ -47,7 +107,7 @@ login?: string;
 		noAccount.textContent=I18n.getTranslation("htmlPages.noAccount");
 	}
 })()
-setTheme();
+
 function getBulkUsers(){
 	const json = getBulkInfo();
 	for(const thing in json.users){
@@ -353,6 +413,7 @@ async function getapiurls(str: string): Promise<
 	}
 }
 async function checkInstance(instance?: string){
+	await instancefetch;
 	const verify = document.getElementById("verify");
 	try{
 		verify!.textContent = I18n.getTranslation("login.checking");
@@ -450,65 +511,43 @@ async function login(username: string, password: string, captcha: string){
 						capty.setAttribute("data-sitekey", response.captcha_sitekey);
 						const script = document.createElement("script");
 						script.src = "https://js.hcaptcha.com/1/api.js";
-	capt!.append(script);
-	capt!.append(capty);
+						capt!.append(script);
+						capt!.append(capty);
 					}
 				}else{
 					console.log(response);
 					if(response.ticket){
-						let onetimecode = "";
-						new Dialog([
-							"vdiv",
-							["title", I18n.getTranslation("2faCode")],
-							[
-								"textbox",
-								"",
-								"",
-								function(this: HTMLInputElement){
-									// eslint-disable-next-line no-invalid-this
-									onetimecode = this.value;
-								},
-							],
-							[
-								"button",
-								"",
-								I18n.getTranslation("submit"),
-								function(){
-									fetch(api + "/auth/mfa/totp", {
-										method: "POST",
-										headers: {
-											"Content-Type": "application/json",
-										},
-										body: JSON.stringify({
-											code: onetimecode,
-											ticket: response.ticket,
-										}),
-									})
-										.then(r=>r.json())
-										.then(res=>{
-											if(res.message){
-												alert(res.message);
-											}else{
-												console.warn(res);
-												if(!res.token)return;
-												adduser({
-													serverurls: JSON.parse(localStorage.getItem("instanceinfo") as string),
-													email: username,
-													token: res.token,
-												}).username = username;
-												const redir = new URLSearchParams(
-													window.location.search
-												).get("goback");
-												if(redir){
-													window.location.href = redir;
-												}else{
-													window.location.href = "/channels/@me";
-												}
-											}
-										});
-								},
-							],
-						]).show();
+						const better=new Dialog("");
+						const form=better.options.addForm("",(res:any)=>{
+							if(res.message){
+								throw new FormError(ti,res.message);
+							}else{
+								console.warn(res);
+								if(!res.token)return;
+								adduser({
+									serverurls: JSON.parse(localStorage.getItem("instanceinfo") as string),
+									email: username,
+									token: res.token,
+								}).username = username;
+								const redir = new URLSearchParams(
+									window.location.search
+								).get("goback");
+								if(redir){
+									window.location.href = redir;
+								}else{
+									window.location.href = "/channels/@me";
+								}
+							}
+						},{
+							fetchURL:api + "/auth/mfa/totp",
+							method:"POST",
+							headers:{
+								"Content-Type": "application/json",
+							}
+						});
+						form.addTitle(I18n.getTranslation("2faCode"));
+						const ti=form.addTextInput("","code");
+						better.show()
 					}else{
 						console.warn(response);
 						if(!response.token)return;
@@ -627,64 +666,9 @@ export{
 	adduser,
 };
 
-const datalist = document.getElementById("instances");
-console.warn(datalist);
+
 export function getInstances(){
 	return instances;
 }
 
-fetch("/instances.json")
-	.then(res=>res.json())
-	.then(
-		(json: {
-			name: string;
-			description?: string;
-			descriptionLong?: string;
-			image?: string;
-			url?: string;
-			display?: boolean;
-			online?: boolean;
-			uptime: { alltime: number; daytime: number; weektime: number };
-			urls: {
-				wellknown: string;
-				api: string;
-				cdn: string;
-				gateway: string;
-				login?: string;
-			}
-		}[]
-		)=>{
-			instances = json;
-			if(datalist){
-				console.warn(json);
-				if(instancein && instancein.value === ""){
-					instancein.value = json[0].name;
-				}
-				for(const instance of json){
-					if(instance.display === false){
-						continue;
-					}
-					const option = document.createElement("option");
-					option.disabled = !instance.online;
-					option.value = instance.name;
-					if(instance.url){
-						stringURLMap.set(option.value, instance.url);
-						if(instance.urls){
-							stringURLsMap.set(instance.url, instance.urls);
-						}
-					}else if(instance.urls){
-						stringURLsMap.set(option.value, instance.urls);
-					}else{
-						option.disabled = true;
-					}
-					if(instance.description){
-						option.label = instance.description;
-					}else{
-						option.label = instance.name;
-					}
-					datalist.append(option);
-				}
-				checkInstance("");
-			}
-		}
-	);
+

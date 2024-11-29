@@ -1,7 +1,7 @@
 import{ Contextmenu }from"./contextmenu.js";
 import{ User }from"./user.js";
 import{ Member }from"./member.js";
-import{ MarkDown }from"./markdown.js";
+import{ MarkDown, saveCaretPosition }from"./markdown.js";
 import{ Embed }from"./embed.js";
 import{ Channel }from"./channel.js";
 import{ Localuser }from"./localuser.js";
@@ -10,9 +10,10 @@ import{ File }from"./file.js";
 import{ SnowFlake }from"./snowflake.js";
 import{ memberjson, messagejson }from"./jsontypes.js";
 import{ Emoji }from"./emoji.js";
-import{ Dialog }from"./dialog.js";
 import{ mobile }from"./login.js";
 import { I18n } from "./i18n.js";
+import { Hover } from "./hover.js";
+import { Dialog } from "./settings.js";
 
 class Message extends SnowFlake{
 	static contextmenu = new Contextmenu<Message, undefined>("message menu");
@@ -86,7 +87,7 @@ class Message extends SnowFlake{
 		Message.contextmenu.addbutton(
 			()=>I18n.getTranslation("message.delete"),
 			function(this: Message){
-				this.delete();
+				this.confirmDelete();
 			},
 			null,
 			function(){
@@ -95,14 +96,10 @@ class Message extends SnowFlake{
 		);
 	}
 	setEdit(){
+		const prev=this.channel.editing;
 		this.channel.editing = this;
-		const markdown = (
-			document.getElementById("typebox") as HTMLDivElement & {
-			markdown: MarkDown;
-			}
-			).markdown as MarkDown;
-		markdown.txt = this.content.rawString.split("");
-		markdown.boxupdate(document.getElementById("typebox") as HTMLDivElement);
+		if(prev) prev.generateMessage();
+		this.generateMessage(undefined,false)
 	}
 	constructor(messagejson: messagejson, owner: Channel){
 		super(messagejson.id);
@@ -133,6 +130,7 @@ class Message extends SnowFlake{
 			}
 		);
 	}
+	edited_timestamp:string|null=null;
 	giveData(messagejson: messagejson){
 		const func = this.channel.infinite.snapBottom();
 		for(const thing of Object.keys(messagejson)){
@@ -338,6 +336,7 @@ class Message extends SnowFlake{
 	}
 	generateMessage(premessage?: Message | undefined, ignoredblock = false){
 		if(!this.div)return;
+		const editmode=this.channel.editing===this;
 		if(!premessage){
 			premessage = this.channel.messages.get(
 				this.channel.idToPrev.get(this.id) as string
@@ -474,8 +473,7 @@ class Message extends SnowFlake{
 				const newt = new Date(this.timestamp).getTime() / 1000;
 				current = newt - old > 600;
 			}
-			const combine =
-				premessage?.author != this.author || current || this.message_reference;
+			const combine = premessage?.author != this.author || current || this.message_reference;
 			if(combine){
 				const pfp = this.author.buildpfp();
 				this.author.bind(pfp, this.guild, false);
@@ -510,18 +508,70 @@ class Message extends SnowFlake{
 				time.textContent = "  " + formatTime(new Date(this.timestamp));
 				time.classList.add("timestamp");
 				userwrap.appendChild(time);
-
+				const hover=new Hover(new Date(this.timestamp).toString());
+				hover.addEvent(time);
+				if(this.edited_timestamp){
+					const edit=document.createElement("span");
+					edit.classList.add("timestamp");
+					edit.textContent=I18n.getTranslation("message.edited");
+					const hover=new Hover(new Date(this.edited_timestamp).toString());
+					hover.addEvent(edit);
+					userwrap.append(edit);
+				}
 				text.appendChild(userwrap);
 			}else{
 				div.classList.remove("topMessage");
 			}
-			const messaged = this.content.makeHTML();
-			(div as any).txt = messaged;
 			const messagedwrap = document.createElement("div");
-			messagedwrap.classList.add("flexttb");
-			messagedwrap.appendChild(messaged);
-			text.appendChild(messagedwrap);
+			if(editmode){
+				const box=document.createElement("div");
+				box.classList.add("messageEditContainer");
+				const area=document.createElement("div");
+				const sb=document.createElement("div");
+				sb.style.position="absolute";
+				sb.style.width="100%";
+				const search=document.createElement("div");
+				search.classList.add("searchOptions","flexttb");
+				area.classList.add("editMessage");
+				area.contentEditable="true";
+				const md=new MarkDown(this.content.rawString,this.owner,{keep:true});
+				area.append(md.makeHTML());
+				area.addEventListener("keyup", (event)=>{
+					if(this.localuser.keyup(event)) return;
+					if(event.key === "Enter" && !event.shiftKey){
+						this.edit(md.rawString);
+						this.channel.editing=null;
+						this.generateMessage();
+					}
+				});
+				area.addEventListener("keydown", event=>{
+					this.localuser.keydown(event);
+					if(event.key === "Enter" && !event.shiftKey) event.preventDefault();
+					if(event.key === "Escape"){
+						this.channel.editing=null;
+						this.generateMessage();
+					}
+				});
+				md.giveBox(area,(str,pre)=>{
+					this.localuser.search(search,md,str,pre)
+				})
+				sb.append(search);
+				box.append(sb,area);
+				messagedwrap.append(box);
+				setTimeout(()=>{
+					area.focus();
+					const fun=saveCaretPosition(area,Infinity);
+					if(fun) fun();
+				})
+			}else{
+				this.content.onUpdate=()=>{};
+				const messaged = this.content.makeHTML();
+				(div as any).txt = messaged;
+				messagedwrap.classList.add("flexttb");
+				messagedwrap.appendChild(messaged);
 
+			}
+			text.appendChild(messagedwrap);
 			build.appendChild(text);
 			if(this.attachments.length){
 				console.log(this.attachments);
@@ -591,6 +641,18 @@ class Message extends SnowFlake{
 							this.channel.setReplying(this);
 						};
 					}
+					if(this.channel.hasPermission("ADD_REACTIONS")){
+						const container = document.createElement("button");
+						const reply = document.createElement("span");
+						reply.classList.add("svg-emoji", "svgicon");
+						container.append(reply);
+						buttons.append(container);
+						container.onclick = e=>{
+							Emoji.emojiPicker(e.x, e.y, this.localuser).then(_=>{
+								this.reactionToggle(_);
+							});
+						};
+					}
 					if(this.author === this.localuser.user){
 						const container = document.createElement("button");
 						const edit = document.createElement("span");
@@ -612,31 +674,7 @@ class Message extends SnowFlake{
 								this.delete();
 								return;
 							}
-							const diaolog = new Dialog([
-								"vdiv",
-								["title", I18n.getTranslation("deleteConfirm")],
-								[
-									"hdiv",
-									[
-										"button",
-										"",
-										I18n.getTranslation("yes"),
-										()=>{
-											this.delete();
-											diaolog.hide();
-										},
-									],
-									[
-										"button",
-										"",
-										I18n.getTranslation("no"),
-										()=>{
-											diaolog.hide();
-										},
-									],
-								]
-							]);
-							diaolog.show();
+							this.confirmDelete();
 						};
 					}
 					if(buttons.childNodes.length !== 0){
@@ -651,6 +689,19 @@ class Message extends SnowFlake{
 				}
 			};
 		}
+	}
+	confirmDelete(){
+		const diaolog=new Dialog("");
+		diaolog.options.addTitle(I18n.getTranslation("deleteConfirm"));
+		const options=diaolog.options.addOptions("",{ltr:true});
+		options.addButtonInput("",I18n.getTranslation("yes"),()=>{
+			this.delete();
+			diaolog.hide();
+		});
+		options.addButtonInput("",I18n.getTranslation("no"),()=>{
+			diaolog.hide();
+		})
+		diaolog.show();
 	}
 	updateReactions(){
 		const reactdiv = this.reactdiv.deref();
