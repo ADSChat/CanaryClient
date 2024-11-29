@@ -1,11 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
+
 	<head>
 		<meta charset="utf-8">
 		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-		<title>Canary Chat</title>
-		<meta content="Canary Chat" property="og:title">
-		<meta content="A new instance that hopes to revolutionise history!" property="og:description">
+		<title>Jank Client</title>
+		<meta content="Jank Client" property="og:title">
+		<meta content="A spacebar client that has DMs, replying and more" property="og:description">
 		<meta content="/logo.webp" property="og:image">
 		<meta content="#4b458c" data-react-helmet="true" name="theme-color">
 		<link href="/style.css" rel="stylesheet">
@@ -13,12 +14,14 @@
 		<style>body.no-theme,#loading{background:#16191b;}@media(prefers-color-scheme:light){body.no-theme,#loading{background:#9397bd;}}</style>
 		<link rel="manifest" href="/manifest.json">
 	</head>
+
 	<body class="no-theme">
-		<script src="/index.js" type="module"></script>
+
+
 		<div id="loading" class="loading">
 			<div class="centeritem">
 				<img src="/logo.svg" style="width:3in;height:3in;">
-				<h1>Canary Chat is loading</h1>
+				<h1 id="loadingText">Jank Client is loading</h1>
 				<h2 id="load-desc">This shouldn't take long</h2>
 				<h1 id="switchaccounts">Switch Accounts</h1>
 			</div>
@@ -37,11 +40,13 @@
 					<div class="flexltr" id="userdock">
 						<div class="flexltr" id="userinfo">
 							<img id="userpfp" class="pfp">
+
 							<div class="flexttb userflex">
 								<p id="username">USERNAME</p>
 								<p id="status">STATUS</p>
 							</div>
 						</div>
+
 						<div id="user-actions">
 							<span id="settings" class="svgicon svg-settings"></span>
 						</div>
@@ -54,12 +59,12 @@
 						<span class="svgicon svg-category"></span>
 					</label>
 					<input type="checkbox" id="maintoggle">
-					<span class="flexltr">
+					<span class="flexltr" style="align-items: center;">
 						<span id="channelname">Channel name</span>
 						<span id="channelTopic" class="ellipsis" hidden>Channel topic</span>
 					</span>
 					<label for="memberlisttoggle" id="memberlisttoggleicon">
-						<span class="svgicon svg-channel"></span>
+						<span class="svgicon svg-friends"></span>
 					</label>
 					<input type="checkbox" id="memberlisttoggle" checked>
 				</div>
@@ -70,13 +75,16 @@
 							</div>
 						</div>
 						<div style="position: relative;">
-							<div id="searchOptions" class="flexttb"></div>
+							<div id="searchOptions" class="flexttb searchOptions"></div>
 						</div>
 						<div id="pasteimage" class="flexltr"></div>
 						<div id="replybox" class="hideReplyBox"></div>
 						<div id="typediv">
 							<div id="realbox">
-								<div id="typebox" contentEditable="true"></div>
+								<div class="outerTypeBox">
+									<span class="svg-upload svgicon" id="upload"></span>
+									<div id="typebox" contentEditable="true"></div>
+								</div>
 							</div>
 							<div id="typing" class="hidden flexltr">
 								<p id="typingtext">typing</p>
@@ -92,5 +100,9 @@
 				</div>
 			</div>
 		</div>
+		<div hidden id="gimmefile">
+			<div id="filedroptext" class="centeritem nonimagecenter">Upload your files here!</div>
+		</div>
 	</body>
+	<script src="/index.js" type="module"></script>
 </html>
